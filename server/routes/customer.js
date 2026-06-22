@@ -10,12 +10,27 @@ const { DEFAULT_EXPIRATION } = constants.redis;
 const { PARENT_REGION } = constants.region;
 const { isPointInPolygon } = require('../utils/miscellaneous.js');
 
+const getCustomerTicket = async (ticketId, userId) => {
+    const ticket = await Ticket.findOne({ _id: ticketId, ownerId: userId });
+    if (!ticket) throw new ExpressError(404, 'Ticket not found');
+    return ticket;
+}
+
+const serializeTicket = (ticket) => {
+    const raw = ticket.toJSON ? ticket.toJSON() : ticket;
+    const created = raw.createdAt ? new Date(raw.createdAt).toISOString() : new Date().toISOString();
+    return {
+        ...raw,
+        dateOfCreation: created.slice(0, 10),
+        timeOfCreation: created.slice(11, 16)
+    };
+}
+
 
 router.route("/")
     .get((req, res, next) => {
         try {
 
-            console.log('reached /customer')
             return res.status(200).send({ ...req.user });
 
         } catch (error) {
@@ -65,10 +80,7 @@ router.route("/ticket")
 
             const user = req.user;
             const tickets = await redis.getOrSetCache(`${user.role}:${user._id}:tickets`, async () => {
-                const tickets = Ticket.find({ ownerId: user._id }).select('-ownerId -note');
-
-                // update createdAt to IST from UTC
-                console.log(tickets);
+                const tickets = await Ticket.find({ ownerId: user._id }).select('-ownerId -note').sort({ createdAt: -1 });
                 return tickets;
             }, DEFAULT_EXPIRATION);
 
@@ -105,69 +117,41 @@ router.route("/ticket")
             let tempTickets = await redis.getCache(`${user.role}:${user._id}:tickets`);
             let duplicate = false;
             
-            console.log(tempTickets);
             if(tempTickets != null){
-                // duplicate = (req.body.location.coordinates == tempTicket[0].location.coordinates);
-                duplicate = tempTickets.some((ticket)=> ticket.location.coordinates == req.body.location.coordinates);
-                console.log('duplicate in redis fetch: ', duplicate);
+                duplicate = tempTickets.some((ticket)=> {
+                    const coords = ticket.location.coordinates;
+                    return coords[0] === req.body.location.coordinates[0] && coords[1] === req.body.location.coordinates[1] && ticket.status !== 'closed';
+                });
             } else {
-                let tickets = await Ticket.find({ ownerId: user._id }).select('location');
-                console.log(tickets);
-                // duplicate = (req.body.location.coordinates == ticket.location.coordinates);
+                let tickets = await Ticket.find({ ownerId: user._id, status: 'active' }).select('location status');
                 if(tickets){
-                    // duplicate = tickets.some((ticket)=> (ticket.location.coordinates == req.body.location.coordinates));
                     tickets.forEach((ticket)=>{
-                        console.log(ticket.location.coordinates);
                         if((ticket.location.coordinates[0] == req.body.location.coordinates[0])){
                             if((ticket.location.coordinates[1] == req.body.location.coordinates[1]))
                             duplicate = true;
                         }
                     })
-
-                    console.log('duplicate in mongoDB fetch: ', duplicate);
                 }
             }
-
-            console.log('duplicate: ', duplicate);
 
             if(duplicate){
                 throw new ExpressError(409, 'duplicate entry');
             }
 
-            // if note exists then store the ticket with note as an array
-            console.log(typeof req.body.note == 'string');
             if (req.body.note && (typeof req.body.note == 'string')) {
                 let message = req.body.note;
                 req.body.note = [{ author: `${user.username}`, message }]
             }
 
-            console.log("POST /customer/ticket; req.body: ", req.body);
-
-            let ticket = new Ticket({ ...req.body, ownerId: user._id, status: 'active' }); // write-behind cache
-
-            // 
-            let temp = ticket.createdAt = new Date(Date.now()/* + (5.5 * 60 * 60 * 1000)*/);  // instead of converting to IST everywhere, just convert it here
-
-            if (temp instanceof Date) {
-                temp = temp.toISOString();
-            }
-            const [dateOfCreation, timeOfCreation] = [temp.slice(0, 10), temp.slice(11, 16)];
-            //
-
-            await redis.setCache(`ticket:${ticket._id}`, { ...ticket, dateOfCreation, timeOfCreation });
-            // await redis.setCache(`${user.role}:${user._id}:tickets`, { ...ticket, dateOfCreation, timeOfCreation });
-
-            //implement write-behind cache later
+            let ticket = new Ticket({ ...req.body, ownerId: user._id, status: 'active' });
             await ticket.save();
+            const response = serializeTicket(ticket);
+            await redis.setCache(`ticket:${ticket._id}`, response, DEFAULT_EXPIRATION);
+            await redis.deleteCache(`${user.role}:${user._id}:tickets`);
 
-            console.log("POST /customer/ticket; ticket: ", {...ticket.toJSON()});
-
-            return res.status(201).send({ ...ticket.toJSON(), dateOfCreation, timeOfCreation });
+            return res.status(201).send(response);
 
         } catch (error) {
-
-            console.error(error);
-            console.log(error instanceof ExpressError);
 
             if (!(error instanceof ExpressError)  && !(error.status)) {
                 const err = new ExpressError(500, `${error}`);
@@ -187,22 +171,11 @@ router.route("/ticket/:id")
             let ticketId = req.params.id;
 
             let ticket = await redis.getOrSetCache(`ticket:${ticketId}`, async () => {
-                const ticket = await Ticket.findOne({ _id: ticketId });
-
-                //
-                let temp = ticket.createdAt;
-
-                if (temp instanceof Date) {
-                    // to convert time to Indian Standard Time
-                    // const istDate = new Date(temp.getTime() + (5.5 * 60 * 60 * 1000));
-                    // temp = istDate.toISOString();
-                    temp = temp.toISOString();
-                }
-                const [dateOfCreation, timeOfCreation] = [temp.slice(0, 10), temp.slice(11, 16)];
-                //
-
-                return { ...ticket.toJSON(), dateOfCreation, timeOfCreation };
+                const ticket = await getCustomerTicket(ticketId, req.user._id);
+                return serializeTicket(ticket);
             })
+
+            if (ticket.ownerId && ticket.ownerId.toString() !== req.user._id.toString()) throw new ExpressError(403, 'Forbidden');
 
             return res.status(200).send(ticket);
 
@@ -235,15 +208,14 @@ router.route("/ticket/:id")
                 }
             }
 
-            let data = await redis.updateCache(`ticket:${ticketId}`, updates);
-
-            //implement write-behind cache later
-            let ticket = await Ticket.findById(ticketId);
+            let ticket = await getCustomerTicket(ticketId, user._id);
             ticket.note ??= [];
             ticket.note.push(updates.note);
             await ticket.save();
+            await redis.setCache(`ticket:${ticketId}`, serializeTicket(ticket), DEFAULT_EXPIRATION);
+            await redis.deleteCache(`${user.role}:${user._id}:tickets`);
 
-            return res.status(200).send(data);
+            return res.status(200).send(serializeTicket(ticket));
 
         } catch (error) {
 
@@ -264,11 +236,13 @@ router.route("/ticket/:id")
 
             let ticketId = req.params.id;
 
+            const ticket = await getCustomerTicket(ticketId, req.user._id);
             await redis.deleteCache(`ticket:${ticketId}`);
+            await redis.deleteCache(`${req.user.role}:${req.user._id}:tickets`);
 
-            await Ticket.findByIdAndDelete(ticketId);
+            await Ticket.findByIdAndDelete(ticket._id);
 
-            res.status(200).send('deleted successfully');
+            res.status(200).send({ message: 'deleted successfully' });
 
         } catch (error) {
 

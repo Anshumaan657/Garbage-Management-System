@@ -9,14 +9,46 @@ const redis = require('../redis/redis.js');
 const { DEFAULT_EXPIRATION } = require('../constants').redis;
 const SLOT = require('../constants').slot;
 
+const serializeTicket = (ticket) => {
+    const raw = ticket.toJSON ? ticket.toJSON() : ticket;
+    const created = raw.createdAt ? new Date(raw.createdAt).toISOString() : new Date().toISOString();
+    return {
+        ...raw,
+        dateOfCreation: created.slice(0, 10),
+        timeOfCreation: created.slice(11, 16)
+    };
+}
+
+const getAdminRegion = async (user) => {
+    const region = await redis.getCache(`region:${user.region}`);
+    if (!region) throw new ExpressError(400, 'Admin region is not configured');
+    return region;
+}
+
+const getAdminTicket = async (ticketId, user) => {
+    const region = await getAdminRegion(user);
+    const ticket = await Ticket.findOne({
+        _id: ticketId,
+        location: {
+            $geoWithin: {
+                $geometry: {
+                    type: 'Polygon',
+                    coordinates: region.area.coordinates
+                }
+            }
+        }
+    });
+    if (!ticket) throw new ExpressError(404, 'Ticket not found in your region');
+    return ticket;
+}
 
 router.route("/")
     .get(async (req, res, next) => {
 
         try {
 
-            req.user.region = (await redis.getCache(`region:${req.user.region}`)).name;
-            return res.status(200).send({ ...req.user });
+            const region = await getAdminRegion(req.user);
+            return res.status(200).send({ ...req.user, region: region.name });
 
         } catch (error) {
 
@@ -39,13 +71,17 @@ router.route("/")
             let { error } = joi.updateAdminSchema.validate(req.body);
             if (error) { throw new ExpressError(400, 'Inappropriate request body') };
 
-            let data = await redis.updateCache(`${user.role}:${user._id}`, req.body.updates, DEFAULT_EXPIRATION);
-            
-            req.body.updates.region = (await redis.getCache(`region:${req.body.updates.region}`))._id;
+            const updates = { ...req.body.updates };
+            if (updates.region) {
+                const region = await redis.getCache(`region:${updates.region}`);
+                if (!region) throw new ExpressError(400, 'Invalid region');
+                updates.region = region._id;
+            }
 
-            await User.findByIdAndUpdate(user._id, req.body.updates); // later add a queue for storing in database, implement write-behind caching
+            const updated = await User.findByIdAndUpdate(user._id, updates, { new: true }).select('-password').lean();
+            await redis.setCache(`${user.role}:${user._id}`, updated, DEFAULT_EXPIRATION);
 
-            res.status(200).send(data);
+            res.status(200).send(updated);
 
         } catch (error) {
 
@@ -67,21 +103,26 @@ router.route("/ticket")
         try {
 
             const user = req.user;
-            const currTime = (new Date(Date.now()/* + (5.5 * 60 * 60 * 1000)*/)).toISOString().split('T')[1].slice(0, 8);
+            const currTime = new Intl.DateTimeFormat('en-GB', {
+                timeZone: process.env.APP_TIMEZONE || 'Asia/Kolkata',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            }).format(new Date());
 
             const { start, end } = SLOT[user.slot];
             if (!(start <= currTime && end >= currTime)) {
                 throw new ExpressError(403, 'Forbidden, try again in your time slot');
             }
 
-            // store objectId in user.region & get region object from redis cache
-
-            const region = await redis.getCache(`region:${user.region}`);
+            const region = await getAdminRegion(user);
 
 
             let tickets = await redis.getOrSetCache(`ticket:${user.slot}:${region.name}`, async () => {
                 let tickets = await Ticket.find({
                     slot: user.slot,
+                    status: 'active',
                     location: {
                         $geoWithin: {
                             $geometry: {
@@ -90,19 +131,14 @@ router.route("/ticket")
                             }
                         }
                     }
-                }).select('-note');
+                }).select('-note').sort({ createdAt: -1 });
 
                 return tickets;
             });
 
-            console.log("GET /admin/ticket; tickets: ", tickets);
-            console.log("GET /admin/ticket; tickets: ",typeof tickets);
-
-            // find the shortest path and return
-
             const coords = tickets.map(ticket => ticket.location.coordinates);
 
-            const shortestPath = await getShortestPath(coords);
+            const shortestPath = await getShortestPath(coords).catch(() => false);
 
 
             const response = shortestPath ? {tickets, shortestPath} : {tickets};
@@ -131,23 +167,7 @@ router.route("/ticket/:id")
 
             let ticketId = req.params.id;
 
-            let ticket = await redis.getOrSetCache(`ticket:${ticketId}`, async () => {
-                const ticket = await Ticket.findOne({ _id: ticketId });
-
-                //
-                let temp = ticket.createdAt;
-
-                if (temp instanceof Date) {
-                    // to convert time to Indian Standard Time
-                    // const istDate = new Date(temp.getTime() + (5.5 * 60 * 60 * 1000));
-                    // temp = istDate.toISOString();
-                    temp = temp.toISOString();
-                }
-                const [dateOfCreation, timeOfCreation] = [temp.slice(0, 10), temp.slice(11, 16)];
-                //
-
-                return { ...ticket.toJSON(), dateOfCreation, timeOfCreation };
-            })
+            let ticket = serializeTicket(await getAdminTicket(ticketId, req.user));
 
             return res.status(200).send(ticket);
 
@@ -182,15 +202,13 @@ router.route("/ticket/:id")
                 }
             }
 
-            let data = await redis.updateCache(`ticket:${ticketId}`, updates);
-
-            //implement write-behind cache later
-            let ticket = await Ticket.findById(ticketId);
+            let ticket = await getAdminTicket(ticketId, user);
             ticket.note ??= [];
             ticket.note.push(updates.note);
             await ticket.save();
+            await redis.setCache(`ticket:${ticketId}`, serializeTicket(ticket), DEFAULT_EXPIRATION);
 
-            return res.status(200).send(data);
+            return res.status(200).send(serializeTicket(ticket));
 
         } catch (error) {
 
@@ -216,13 +234,14 @@ router.route("/ticket/:id")
                 status: 'closed'
             }
 
-            await redis.updateCache(`ticket:${ticketId}`, updates);
+            const ticket = await getAdminTicket(ticketId, user);
 
-            //implement write-behind cache later
+            await Ticket.findByIdAndUpdate(ticket._id, updates);
+            await redis.deleteCache(`ticket:${ticketId}`);
+            const region = await getAdminRegion(user);
+            await redis.deleteCache(`ticket:${user.slot}:${region.name}`);
 
-            await Ticket.findByIdAndUpdate(ticketId, updates);
-
-            return res.status(200).send('ticket closed');
+            return res.status(200).send({ message: 'ticket closed' });
 
         } catch (error) {
 

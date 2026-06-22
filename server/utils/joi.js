@@ -2,10 +2,10 @@ const Joi = require('joi');
 const { VALID, REGEX } = require('../constants').joi
 
 const signUpSchema = Joi.object({
-    username: Joi.string().required(),
+    username: Joi.string().pattern(REGEX.disallowHtml).min(3).max(32).required(),
     email: Joi.string().pattern(REGEX.email).required(),
-    password: Joi.string().pattern(REGEX.disallowHtml).required(),
-    phone: Joi.string().length(10).required(),
+    password: Joi.string().pattern(REGEX.password).required(),
+    phone: Joi.string().pattern(REGEX.phone).required(),
     role: Joi.string().valid(...VALID.roles).required(),
     slot: Joi.alternatives().conditional('role', {
         is: 'admin',
@@ -53,7 +53,7 @@ const updateCustomerSchema = Joi.object({
     updates: Joi.object({
         email: Joi.string().pattern(REGEX.email),
         phone: Joi.string().pattern(REGEX.phone),
-    })
+    }).min(1).required()
 })
 
 const updateAdminSchema = Joi.object({
@@ -62,7 +62,7 @@ const updateAdminSchema = Joi.object({
         phone: Joi.string().pattern(REGEX.phone),
         region: Joi.string().valid(...VALID.regions),
         slot: Joi.string().valid(...VALID.slots),
-    })
+    }).min(1).required()
 })
 
 const ticketSchema = Joi.object({

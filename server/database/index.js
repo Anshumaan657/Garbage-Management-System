@@ -4,14 +4,16 @@ const Ticket = require("./model/ticket.js");
 const Region = require("./model/region.js");
 const mongoose = require('mongoose');
 const { REGIONS } = require('../constants/region.js');
-const {initRegionCache} = require('../redis/redis.js')
+const { initRegionCache } = require('../redis/redis.js')
 
 const connect = async () => {
 
-    await mongoose.connect('mongodb://127.0.0.1:27017/GMS');
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/GMS', {
+        serverSelectionTimeoutMS: Number(process.env.MONGODB_TIMEOUT_MS || 5000)
+    });
     console.log('connected to MongoDB.');
-    // await initRegions(REGIONS);
-    console.log('Database initailized successfully');
+    await initRegions(REGIONS);
+    console.log('Database initialized successfully');
     await initRegionCache();
 
 }
@@ -27,7 +29,11 @@ const createDocument = async (Model, details) => {
 }
 
 const initRegions = async (regions) => {
-    await Region.insertMany(regions);
+    await Promise.all(
+        regions.map(region =>
+            Region.updateOne({ name: region.name }, { $set: region }, { upsert: true })
+        )
+    );
 }
 
-module.exports = { connect }
+module.exports = { connect, initRegions }

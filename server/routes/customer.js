@@ -10,6 +10,11 @@ const { DEFAULT_EXPIRATION } = constants.redis;
 const { PARENT_REGION } = constants.region;
 const { isPointInPolygon } = require('../utils/miscellaneous.js');
 
+const ticketListSchema = joi.Joi.object({
+    status: joi.Joi.string().valid('active', 'closed'),
+    slot: joi.Joi.string().valid('morning', 'afternoon', 'evening')
+});
+
 const getCustomerTicket = async (ticketId, userId) => {
     const ticket = await Ticket.findOne({ _id: ticketId, ownerId: userId });
     if (!ticket) throw new ExpressError(404, 'Ticket not found');
@@ -79,10 +84,14 @@ router.route("/ticket")
         try {
 
             const user = req.user;
-            const tickets = await redis.getOrSetCache(`${user.role}:${user._id}:tickets`, async () => {
-                const tickets = await Ticket.find({ ownerId: user._id }).select('-ownerId -note').sort({ createdAt: -1 });
-                return tickets;
-            }, DEFAULT_EXPIRATION);
+            const { error, value: filters } = ticketListSchema.validate(req.query);
+            if (error) throw new ExpressError(400, 'Invalid ticket filters');
+
+            const query = { ownerId: user._id };
+            if (filters.status) query.status = filters.status;
+            if (filters.slot) query.slot = filters.slot;
+
+            const tickets = await Ticket.find(query).select('-ownerId -note').sort({ createdAt: -1 });
 
             res.status(200).send(tickets);
 

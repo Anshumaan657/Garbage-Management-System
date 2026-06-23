@@ -9,6 +9,11 @@ const redis = require('../redis/redis.js');
 const { DEFAULT_EXPIRATION } = require('../constants').redis;
 const SLOT = require('../constants').slot;
 
+const ticketListSchema = joi.Joi.object({
+    status: joi.Joi.string().valid('active', 'closed').default('active'),
+    slot: joi.Joi.string().valid('morning', 'afternoon', 'evening')
+});
+
 const serializeTicket = (ticket) => {
     const raw = ticket.toJSON ? ticket.toJSON() : ticket;
     const created = raw.createdAt ? new Date(raw.createdAt).toISOString() : new Date().toISOString();
@@ -103,6 +108,14 @@ router.route("/ticket")
         try {
 
             const user = req.user;
+            const { error, value: filters } = ticketListSchema.validate(req.query);
+            if (error) throw new ExpressError(400, 'Invalid ticket filters');
+
+            const selectedSlot = filters.slot || user.slot;
+            if (selectedSlot !== user.slot) {
+                throw new ExpressError(403, 'Forbidden, admins can only view their assigned slot');
+            }
+
             const currTime = new Intl.DateTimeFormat('en-GB', {
                 timeZone: process.env.APP_TIMEZONE || 'Asia/Kolkata',
                 hour: '2-digit',
@@ -111,7 +124,7 @@ router.route("/ticket")
                 hour12: false
             }).format(new Date());
 
-            const { start, end } = SLOT[user.slot];
+            const { start, end } = SLOT[selectedSlot];
             if (!(start <= currTime && end >= currTime)) {
                 throw new ExpressError(403, 'Forbidden, try again in your time slot');
             }
@@ -119,22 +132,18 @@ router.route("/ticket")
             const region = await getAdminRegion(user);
 
 
-            let tickets = await redis.getOrSetCache(`ticket:${user.slot}:${region.name}`, async () => {
-                let tickets = await Ticket.find({
-                    slot: user.slot,
-                    status: 'active',
-                    location: {
-                        $geoWithin: {
-                            $geometry: {
-                                type: 'Polygon',
-                                coordinates: region.area.coordinates
-                            }
+            let tickets = await Ticket.find({
+                slot: selectedSlot,
+                status: filters.status,
+                location: {
+                    $geoWithin: {
+                        $geometry: {
+                            type: 'Polygon',
+                            coordinates: region.area.coordinates
                         }
                     }
-                }).select('-note').sort({ createdAt: -1 });
-
-                return tickets;
-            });
+                }
+            }).select('-note').sort({ createdAt: -1 });
 
             const coords = tickets.map(ticket => ticket.location.coordinates);
 

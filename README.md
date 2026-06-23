@@ -99,6 +99,21 @@ The backend also auto-seeds regions on startup, but you can seed manually:
 npm run seed
 ```
 
+## Seed Demo Data
+
+Create demo users and sample tickets for API testing:
+
+```bash
+npm run seed:demo
+```
+
+Demo credentials:
+
+```text
+Customer: demo_customer / StrongPass123!
+Admin: demo_admin / StrongPass123!
+```
+
 ## Start The App
 
 ```bash
@@ -152,7 +167,7 @@ Customer:
 ```http
 GET    /api/v1/customer
 PATCH  /api/v1/customer
-GET    /api/v1/customer/ticket
+GET    /api/v1/customer/ticket?status=active&slot=morning
 POST   /api/v1/customer/ticket
 GET    /api/v1/customer/ticket/:id
 PATCH  /api/v1/customer/ticket/:id
@@ -164,7 +179,7 @@ Admin:
 ```http
 GET   /api/v1/admin
 PATCH /api/v1/admin
-GET   /api/v1/admin/ticket
+GET   /api/v1/admin/ticket?status=active
 GET   /api/v1/admin/ticket/:id
 PATCH /api/v1/admin/ticket/:id
 PUT   /api/v1/admin/ticket/:id
@@ -184,6 +199,7 @@ PUT   /api/v1/admin/ticket/:id
 ```bash
 npm start
 npm run seed
+npm run seed:demo
 npm run check
 ```
 

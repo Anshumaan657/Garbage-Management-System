@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Garbage Management System</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">Operations Console</p>
+            <h1>Garbage Management System</h1>
+        </div>
+        <div class="session">
+            <span id="sessionLabel">Not signed in</span>
+            <button id="logoutBtn" class="ghost hidden" type="button">Logout</button>
+        </div>
+    </header>
+
+    <main>
+        <section id="authView" class="auth-grid">
+            <div class="intro">
+                <h2>Pickup requests, routes, and closures in one workspace.</h2>
+                <p>Structured workflows for residents and municipal teams, with region-aware ticket handling and clear operational status.</p>
+            </div>
+            <div class="panel">
+                <div class="tabs">
+                    <button id="loginTab" class="active" type="button">Login</button>
+                    <button id="signupTab" type="button">Signup</button>
+                </div>
+
+                <form id="loginForm" class="stack">
+                    <input name="username" autocomplete="username" placeholder="Username" aria-label="Username" required>
+                    <input name="password" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password" required>
+                    <button type="submit">Login</button>
+                </form>
+
+                <form id="signupForm" class="stack hidden">
+                    <input name="username" minlength="3" placeholder="Username" aria-label="Username" required>
+                    <input name="email" type="email" placeholder="Email" aria-label="Email" required>
+                    <input name="phone" placeholder="Phone" aria-label="Phone" required>
+                    <input name="password" type="password" placeholder="Password" aria-label="Password" required>
+                    <select name="role" id="roleSelect" aria-label="Role">
+                        <option value="customer">Customer</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                    <div id="adminFields" class="two-col hidden">
+                        <select name="region" aria-label="Region">
+                            <option value="region1">Region 1</option>
+                            <option value="region2">Region 2</option>
+                            <option value="region3">Region 3</option>
+                            <option value="region4">Region 4</option>
+                        </select>
+                        <select name="slot" aria-label="Slot">
+                            <option value="morning">Morning</option>
+                            <option value="afternoon">Afternoon</option>
+                            <option value="evening">Evening</option>
+                        </select>
+                    </div>
+                    <button type="submit">Create Account</button>
+                </form>
+            </div>
+        </section>
+
+        <section id="appView" class="workspace hidden">
+            <aside class="sidebar">
+                <nav id="nav"></nav>
+            </aside>
+            <section id="content" class="content"></section>
+        </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js"></script>
+</body>
+</html>

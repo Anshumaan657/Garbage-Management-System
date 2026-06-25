@@ -6,8 +6,10 @@ A full-stack garbage pickup management project with a Node.js/Express backend, M
 
 - Customer and admin signup/login
 - Secure httpOnly cookie-based sessions
-- Customer ticket creation with pickup coordinates, slot, and notes
+- Customer ticket creation with an interactive map picker, current-location capture, manual coordinate fallback, slot, and notes
 - Customer ticket listing, detail view, note updates, and deletion
+- Service boundary and regional polygons displayed on the map
+- Persistent light/dark theme toggle
 - Admin region/slot-based ticket listing
 - Admin ticket note updates and ticket closure
 - Region seeding for the configured service area
@@ -20,7 +22,7 @@ A full-stack garbage pickup management project with a Node.js/Express backend, M
 - Database: MongoDB with Mongoose
 - Cache: Redis, with local memory fallback
 - Auth: JWT, bcrypt, signed httpOnly cookies
-- Frontend: HTML, CSS, JavaScript
+- Frontend: HTML, CSS, JavaScript, Leaflet, OpenStreetMap tiles
 
 ## Project Structure
 
@@ -126,6 +128,18 @@ Open:
 http://localhost:3000
 ```
 
+## Location Workflow
+
+Customers create pickup requests from the `New Request` screen:
+
+- Click inside the map to select a pickup point.
+- Use `Use Current Location` to fill coordinates from the browser geolocation API.
+- Use longitude/latitude fields as a manual fallback.
+- The highlighted service boundary shows where requests are valid.
+- Ticket details include a compact map preview of the selected pickup point.
+
+For local demos, `ENFORCE_SERVICE_BOUNDARY=false` allows the current device location to be submitted even if it is outside the sample Jaipur service area. Set `ENFORCE_SERVICE_BOUNDARY=true` to make the backend reject points outside the highlighted boundary.
+
 ## Test Accounts
 
 Create accounts from the signup screen.
@@ -150,6 +164,12 @@ Health:
 
 ```http
 GET /api/v1/health
+```
+
+Regions:
+
+```http
+GET /api/v1/regions
 ```
 
 Auth:
@@ -193,6 +213,7 @@ PUT   /api/v1/admin/ticket/:id
 - In development, Redis is optional because the app falls back to memory cache.
 - In production, use Redis and set `NODE_ENV=production` so cookies use stricter settings.
 - The admin route summary uses the public OSRM route service. If that service fails, tickets still load.
+- The frontend uses Leaflet with OpenStreetMap tiles, so map rendering requires internet access while running locally.
 
 ## Useful Commands
 
@@ -206,7 +227,6 @@ npm run check
 ## Suggested Future Improvements
 
 - Add automated tests with Jest or Node's built-in test runner
-- Add map picker integration for exact pickup location selection
 - Add image upload for garbage proof and collection proof
 - Add ticket assignment history and status timeline
 - Add admin analytics by region, slot, and ticket status

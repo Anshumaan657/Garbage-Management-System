@@ -3,10 +3,29 @@ const state = {
     view: 'tickets',
     filter: 'active',
     tickets: [],
-    selectedTicket: null
+    selectedTicket: null,
+    regions: null,
+    selectedLocation: null,
+    requestMap: null,
+    requestMarker: null,
+    detailMap: null
 };
 
 const $ = (selector) => document.querySelector(selector);
+
+const applyTheme = (theme) => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('theme', theme);
+    const toggle = $('#themeToggle');
+    if (toggle) {
+        const isDark = theme === 'dark';
+        toggle.textContent = isDark ? 'Light' : 'Dark';
+        toggle.setAttribute('aria-label', isDark ? 'Switch to light theme' : 'Switch to dark theme');
+    }
+};
+
+const savedTheme = localStorage.getItem('theme') || 'light';
+applyTheme(savedTheme);
 
 const api = async (path, options = {}) => {
     const response = await fetch(path, {
@@ -35,6 +54,80 @@ const toast = (message, isError = false) => {
 const formData = (form) => Object.fromEntries(new FormData(form).entries());
 
 const titleCase = (value = '') => value.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+
+const toLatLng = ([lng, lat]) => [lat, lng];
+
+const polygonLatLngs = (polygon) => polygon.coordinates.map(ring => ring.map(toLatLng));
+
+const regionCenter = () => {
+    const ring = state.regions?.parent?.coordinates?.[0] || [];
+    if (!ring.length) return [26.9565, 75.7832];
+    const totals = ring.reduce((acc, [lng, lat]) => {
+        acc.lat += lat;
+        acc.lng += lng;
+        return acc;
+    }, { lat: 0, lng: 0 });
+    return [totals.lat / ring.length, totals.lng / ring.length];
+};
+
+const loadRegions = async () => {
+    if (!state.regions) state.regions = await api('/api/v1/regions');
+    return state.regions;
+};
+
+const drawServiceBoundary = (map) => {
+    if (!state.regions || !window.L) return;
+
+    const parent = L.polygon(polygonLatLngs(state.regions.parent), {
+        color: '#216b4c',
+        weight: 2,
+        fillColor: '#216b4c',
+        fillOpacity: 0.08
+    }).addTo(map);
+
+    state.regions.regions.forEach((region) => {
+        L.polygon(polygonLatLngs(region.area), {
+            color: '#285c7a',
+            weight: 1,
+            fillColor: '#285c7a',
+            fillOpacity: 0.06
+        }).bindTooltip(titleCase(region.name), { sticky: true }).addTo(map);
+    });
+
+    map.fitBounds(parent.getBounds(), { padding: [18, 18] });
+};
+
+const setSelectedLocation = (longitude, latitude, source = 'Selected') => {
+    const lng = Number(longitude);
+    const lat = Number(latitude);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+
+    state.selectedLocation = { longitude: lng, latitude: lat };
+
+    const longitudeInput = $('#ticketForm [name="longitude"]');
+    const latitudeInput = $('#ticketForm [name="latitude"]');
+    if (longitudeInput && latitudeInput) {
+        longitudeInput.value = lng.toFixed(8);
+        latitudeInput.value = lat.toFixed(8);
+    }
+
+    const output = $('#selectedCoords');
+    if (output) output.textContent = `${source}: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+    if (state.requestMap && window.L) {
+        const latLng = [lat, lng];
+        if (!state.requestMarker) {
+            state.requestMarker = L.marker(latLng, { draggable: true }).addTo(state.requestMap);
+            state.requestMarker.on('dragend', () => {
+                const next = state.requestMarker.getLatLng();
+                setSelectedLocation(next.lng, next.lat, 'Marker');
+            });
+        } else {
+            state.requestMarker.setLatLng(latLng);
+        }
+        state.requestMap.panTo(latLng);
+    }
+};
 
 const setBusy = (form, busy) => {
     [...form.querySelectorAll('button, input, select, textarea')].forEach(el => el.disabled = busy);
@@ -207,7 +300,7 @@ const renderTicketDetail = () => {
                 <div><span>Latitude</span><strong>${coords[1]}</strong></div>
                 <div><span>Longitude</span><strong>${coords[0]}</strong></div>
             </div>
-            <div class="map-box"><strong>Pickup Point</strong><span>${coords[1]}, ${coords[0]}</span></div>
+            <div id="detailMap" class="map-panel compact-map"></div>
             <div>
                 <h3>Activity Notes</h3>
                 <div class="note-list">
@@ -223,6 +316,7 @@ const renderTicketDetail = () => {
         </div>
     `;
     $('#backBtn').addEventListener('click', renderTickets);
+    initDetailMap(coords);
     $('#noteForm').addEventListener('submit', async (event) => {
         event.preventDefault();
         const form = event.currentTarget;
@@ -240,6 +334,26 @@ const renderTicketDetail = () => {
             setBusy(form, false);
         }
     });
+};
+
+const initDetailMap = async (coords) => {
+    if (!window.L || !coords.length) return;
+    await loadRegions().catch(() => null);
+
+    if (state.detailMap) state.detailMap.remove();
+    state.detailMap = L.map('detailMap', {
+        zoomControl: false,
+        scrollWheelZoom: false,
+        attributionControl: false
+    }).setView(toLatLng(coords), 15);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
+    }).addTo(state.detailMap);
+
+    drawServiceBoundary(state.detailMap);
+    L.marker(toLatLng(coords)).addTo(state.detailMap);
+    state.detailMap.setView(toLatLng(coords), 15);
 };
 
 const deleteTicket = async (id) => {
@@ -263,20 +377,26 @@ const closeTicket = async (id) => {
     }
 };
 
-const renderNewTicket = () => {
+const renderNewTicket = async () => {
+    state.selectedLocation = null;
+    if (state.requestMap) {
+        state.requestMap.remove();
+        state.requestMap = null;
+        state.requestMarker = null;
+    }
+
     $('#content').innerHTML = `
         <div class="section-head">
             <div>
                 <h2>New Pickup Request</h2>
-                <p>Create a request inside the configured municipal service boundary.</p>
+                <p>Select a pickup point from the service map or use coordinates as fallback.</p>
             </div>
         </div>
         <div class="panel stack">
-            <div class="map-box"><strong>Pickup Location</strong><span>Use an approved coordinate inside the service boundary.</span></div>
-            <div class="actions">
-                <button type="button" class="ghost" data-preset="75.77781182767711,26.956567333262228">Region 1</button>
-                <button type="button" class="ghost" data-preset="75.78543883994007,26.967577088741734">Region 2</button>
-                <button type="button" class="ghost" data-preset="75.77143914802335,26.959392972331557">Region 3</button>
+            <div id="requestMap" class="map-panel"></div>
+            <div class="location-toolbar">
+                <button type="button" id="currentLocationBtn" class="secondary">Use Current Location</button>
+                <span id="selectedCoords">No pickup point selected</span>
             </div>
             <form id="ticketForm" class="stack">
                 <div class="two-col">
@@ -293,17 +413,41 @@ const renderNewTicket = () => {
             </form>
         </div>
     `;
-    document.querySelectorAll('[data-preset]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const [longitude, latitude] = btn.dataset.preset.split(',');
-            $('#ticketForm [name="longitude"]').value = longitude;
-            $('#ticketForm [name="latitude"]').value = latitude;
+
+    await initRequestMap();
+
+    $('#currentLocationBtn').addEventListener('click', () => {
+        if (!navigator.geolocation) {
+            toast('Current location is not available in this browser.', true);
+            return;
+        }
+
+        $('#currentLocationBtn').disabled = true;
+        navigator.geolocation.getCurrentPosition((position) => {
+            setSelectedLocation(position.coords.longitude, position.coords.latitude, 'Current location');
+            $('#currentLocationBtn').disabled = false;
+        }, () => {
+            toast('Could not access current location. Check browser location permission.', true);
+            $('#currentLocationBtn').disabled = false;
+        }, { enableHighAccuracy: true, timeout: 10000 });
+    });
+
+    ['longitude', 'latitude'].forEach((field) => {
+        $(`#ticketForm [name="${field}"]`).addEventListener('input', () => {
+            const data = formData($('#ticketForm'));
+            setSelectedLocation(data.longitude, data.latitude, 'Manual');
         });
     });
+
     $('#ticketForm').addEventListener('submit', async (event) => {
         event.preventDefault();
         const form = event.currentTarget;
         const data = formData(form);
+        if (!data.longitude || !data.latitude) {
+            toast('Select a pickup point on the map or enter coordinates.', true);
+            return;
+        }
+
         setBusy(form, true);
         try {
             await api('/api/v1/customer/ticket', {
@@ -329,6 +473,32 @@ const renderNewTicket = () => {
     });
 };
 
+const initRequestMap = async () => {
+    if (!window.L) {
+        $('#requestMap').innerHTML = '<div class="empty-state"><strong>Map unavailable</strong><span>Enter coordinates manually.</span></div>';
+        return;
+    }
+
+    await loadRegions().catch(() => {
+        toast('Could not load service boundary. Coordinate entry still works.', true);
+    });
+
+    state.requestMap = L.map('requestMap', {
+        scrollWheelZoom: true
+    }).setView(regionCenter(), 14);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(state.requestMap);
+
+    drawServiceBoundary(state.requestMap);
+
+    state.requestMap.on('click', (event) => {
+        setSelectedLocation(event.latlng.lng, event.latlng.lat, 'Map');
+    });
+};
+
 const renderProfile = async () => {
     $('#content').innerHTML = '<div class="panel">Loading profile...</div>';
     try {
@@ -350,10 +520,61 @@ const renderProfile = async () => {
                     ${profile.slot ? `<div><span>Slot</span><strong>${titleCase(profile.slot)}</strong></div>` : ''}
                 </div>
             </div>
+            ${profile.role === 'admin' ? `
+                <div class="panel stack">
+                    <div>
+                        <h3>Dispatch Scope</h3>
+                        <p class="muted">Update the region and operating slot for this admin account.</p>
+                    </div>
+                    <form id="adminScopeForm" class="stack">
+                        <div class="two-col">
+                            <select name="region" aria-label="Region">
+                                <option value="region1" ${profile.region === 'region1' ? 'selected' : ''}>Region 1</option>
+                                <option value="region2" ${profile.region === 'region2' ? 'selected' : ''}>Region 2</option>
+                                <option value="region3" ${profile.region === 'region3' ? 'selected' : ''}>Region 3</option>
+                                <option value="region4" ${profile.region === 'region4' ? 'selected' : ''}>Region 4</option>
+                            </select>
+                            <select name="slot" aria-label="Slot">
+                                <option value="morning" ${profile.slot === 'morning' ? 'selected' : ''}>Morning</option>
+                                <option value="afternoon" ${profile.slot === 'afternoon' ? 'selected' : ''}>Afternoon</option>
+                                <option value="evening" ${profile.slot === 'evening' ? 'selected' : ''}>Evening</option>
+                            </select>
+                        </div>
+                        <button type="submit">Update Scope</button>
+                    </form>
+                </div>
+            ` : ''}
         `;
+        if (profile.role === 'admin') bindAdminScopeForm();
     } catch (error) {
         $('#content').innerHTML = `<div class="panel"><p>${error.message}</p></div>`;
     }
+};
+
+const bindAdminScopeForm = () => {
+    $('#adminScopeForm').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const data = formData(form);
+        setBusy(form, true);
+        try {
+            await api('/api/v1/admin', {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    updates: {
+                        region: data.region,
+                        slot: data.slot
+                    }
+                })
+            });
+            toast('Dispatch scope updated');
+            renderProfile();
+        } catch (error) {
+            toast(error.message, true);
+        } finally {
+            setBusy(form, false);
+        }
+    });
 };
 
 const render = () => {
@@ -378,6 +599,11 @@ $('#signupTab').addEventListener('click', () => {
 
 $('#roleSelect').addEventListener('change', (event) => {
     $('#adminFields').classList.toggle('hidden', event.target.value !== 'admin');
+});
+
+$('#themeToggle').addEventListener('click', () => {
+    const current = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
 });
 
 $('#loginForm').addEventListener('submit', async (event) => {

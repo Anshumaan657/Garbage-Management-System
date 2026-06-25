@@ -6,10 +6,36 @@
     --page: #f5f7f6;
     --panel: #ffffff;
     --panel-soft: #edf4f0;
+    --field: #ffffff;
+    --topbar: rgba(255, 255, 255, 0.92);
+    --soft: #fbfcfb;
+    --map-bg: #e8efeb;
+    --map-inset: rgba(255, 255, 255, 0.7);
+    --note-bg: #f4f8fa;
     --accent: #216b4c;
     --accent-2: #285c7a;
     --danger: #a7352a;
     --shadow: 0 14px 34px rgba(32, 45, 38, 0.08);
+}
+
+[data-theme="dark"] {
+    color-scheme: dark;
+    --ink: #edf4ef;
+    --muted: #a7b5ad;
+    --line: #33423a;
+    --page: #101713;
+    --panel: #17211c;
+    --panel-soft: #1f2b25;
+    --field: #111a15;
+    --topbar: rgba(16, 23, 19, 0.9);
+    --soft: #131d18;
+    --map-bg: #1a2520;
+    --map-inset: rgba(255, 255, 255, 0.08);
+    --note-bg: #172832;
+    --accent: #55b985;
+    --accent-2: #6ca9c8;
+    --danger: #e06f63;
+    --shadow: 0 16px 38px rgba(0, 0, 0, 0.28);
 }
 
 * { box-sizing: border-box; }
@@ -41,7 +67,7 @@ button.secondary { background: var(--accent-2); }
 button.danger { background: var(--danger); }
 
 button.ghost {
-    background: #fff;
+    background: var(--field);
     color: var(--ink);
     border: 1px solid var(--line);
 }
@@ -56,7 +82,7 @@ input, select, textarea {
     min-height: 42px;
     border: 1px solid var(--line);
     border-radius: 8px;
-    background: #fff;
+    background: var(--field);
     color: var(--ink);
     padding: 10px 12px;
 }
@@ -81,7 +107,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible {
     gap: 20px;
     padding: 18px clamp(18px, 4vw, 42px);
     border-bottom: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.92);
+    background: var(--topbar);
     backdrop-filter: blur(16px);
 }
 
@@ -106,6 +132,14 @@ input:focus, select:focus, textarea:focus, button:focus-visible {
     color: var(--muted);
     font-size: 0.94rem;
     font-weight: 700;
+}
+
+.theme-toggle {
+    min-height: 36px;
+    padding: 0 12px;
+    background: var(--panel-soft);
+    color: var(--ink);
+    border: 1px solid var(--line);
 }
 
 main {
@@ -211,7 +245,7 @@ main {
 
 .sidebar button.active {
     color: var(--ink);
-    background: #fff;
+    background: var(--panel);
     border-color: var(--line);
 }
 
@@ -325,6 +359,40 @@ main {
     color: var(--ink);
 }
 
+.map-panel {
+    min-height: 420px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--map-bg);
+    box-shadow: inset 0 0 0 1px var(--map-inset);
+}
+
+.compact-map {
+    min-height: 260px;
+}
+
+.leaflet-container {
+    font: inherit;
+}
+
+.location-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--soft);
+}
+
+.location-toolbar span {
+    color: var(--muted);
+    font-weight: 700;
+    text-align: right;
+}
+
 .badge {
     display: inline-flex;
     align-items: center;
@@ -353,7 +421,7 @@ main {
     padding: 14px;
     border: 1px solid var(--line);
     border-radius: 8px;
-    background: #fbfcfb;
+    background: var(--soft);
 }
 
 .detail-grid strong {
@@ -370,7 +438,7 @@ main {
 .note {
     border-left: 3px solid var(--accent-2);
     padding: 9px 11px;
-    background: #f4f8fa;
+    background: var(--note-bg);
 }
 
 .muted {
@@ -456,5 +524,18 @@ main {
 
     .ticket {
         grid-template-columns: 1fr;
+    }
+
+    .map-panel {
+        min-height: 330px;
+    }
+
+    .location-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .location-toolbar span {
+        text-align: left;
     }
 }

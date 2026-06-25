@@ -4,16 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Garbage Management System</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
     <header class="topbar">
         <div>
-            <p class="eyebrow">Operations Console</p>
             <h1>Garbage Management System</h1>
         </div>
         <div class="session">
             <span id="sessionLabel">Not signed in</span>
+            <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to dark theme">Dark</button>
             <button id="logoutBtn" class="ghost hidden" type="button">Logout</button>
         </div>
     </header>
@@ -72,6 +73,7 @@
     </main>
 
     <div id="toast" class="toast hidden"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="/app.js"></script>
 </body>
 </html>

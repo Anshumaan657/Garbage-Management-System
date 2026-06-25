@@ -119,7 +119,7 @@ router.route("/ticket")
                 throw new ExpressError(400, 'Invalid request body') 
             };
 
-            if (!(isPointInPolygon(req.body.location.coordinates, PARENT_REGION ))) {
+            if (process.env.ENFORCE_SERVICE_BOUNDARY === 'true' && !(isPointInPolygon(req.body.location.coordinates, PARENT_REGION ))) {
                 throw new ExpressError(400, 'choose a location within the designated working area');
             }
 

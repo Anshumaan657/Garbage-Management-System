@@ -34,6 +34,7 @@ app.get('/api/v1/health', (req, res) => {
 });
 
 app.use('/api/v1/auth', router.auth);
+app.use('/api/v1/regions', router.region);
 app.use('/api/v1/admin', verifyUser, verifyRole('admin'), router.admin);
 app.use('/api/v1/customer', verifyUser, verifyRole('customer'), router.customer);
 

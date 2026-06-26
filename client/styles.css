@@ -306,6 +306,39 @@ main {
     font-size: 1.85rem;
 }
 
+.status-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--soft);
+    color: var(--muted);
+    font-size: 0.92rem;
+}
+
+.status-strip > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ink);
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--danger);
+    box-shadow: 0 0 0 4px rgba(167, 53, 42, 0.12);
+}
+
+.status-dot.online {
+    background: var(--accent);
+    box-shadow: 0 0 0 4px rgba(33, 107, 76, 0.14);
+}
+
 .tickets {
     display: grid;
     gap: 10px;
@@ -520,6 +553,11 @@ main {
 
     .metrics, .detail-grid, .two-col {
         grid-template-columns: 1fr;
+    }
+
+    .status-strip {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .ticket {

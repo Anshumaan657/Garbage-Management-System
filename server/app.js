@@ -30,7 +30,13 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, '..', 'client')));
 
 app.get('/api/v1/health', (req, res) => {
-    res.status(200).send({ status: 'ok', service: 'Garbage Management System' });
+    res.status(200).send({
+        status: 'ok',
+        service: 'Garbage Management System',
+        environment: process.env.NODE_ENV || 'development',
+        uptime: Math.round(process.uptime()),
+        timestamp: new Date().toISOString()
+    });
 });
 
 app.use('/api/v1/auth', router.auth);

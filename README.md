@@ -2,6 +2,16 @@
 
 A full-stack garbage pickup management project with a Node.js/Express backend, MongoDB storage, Redis-compatible caching, JWT cookie authentication, and a browser frontend served by the backend.
 
+## Project Highlights
+
+- Role-based workflows for customers and admins
+- Secure cookie-based authentication with refresh-token support
+- Map-based pickup request creation using Leaflet and OpenStreetMap
+- Region-aware admin ticket visibility and ticket closure flow
+- Demo seeding for quick local review
+- Local-first setup with MongoDB, optional Redis fallback, and clear environment configuration
+- Responsive UI with persistent light/dark theme support
+
 ## Features
 
 - Customer and admin signup/login
@@ -128,6 +138,21 @@ Open:
 http://localhost:3000
 ```
 
+## Demo Walkthrough
+
+Use this sequence to review the project locally:
+
+1. Start MongoDB and Redis.
+2. Run `npm run seed:demo`.
+3. Start the app with `npm start`.
+4. Login as `demo_customer`.
+5. Create a pickup request from `New Request` using the map or current location.
+6. Open the created request and add a note.
+7. Logout and login as `demo_admin`.
+8. Review active tickets in the dispatch queue.
+9. Change admin region/slot from the Account page if needed.
+10. Open a ticket, add an operational note, and close it.
+
 ## Location Workflow
 
 Customers create pickup requests from the `New Request` screen:
@@ -164,6 +189,18 @@ Health:
 
 ```http
 GET /api/v1/health
+```
+
+Example response:
+
+```json
+{
+  "status": "ok",
+  "service": "Garbage Management System",
+  "environment": "development",
+  "uptime": 120,
+  "timestamp": "2026-06-26T10:00:00.000Z"
+}
 ```
 
 Regions:
@@ -215,14 +252,67 @@ PUT   /api/v1/admin/ticket/:id
 - The admin route summary uses the public OSRM route service. If that service fails, tickets still load.
 - The frontend uses Leaflet with OpenStreetMap tiles, so map rendering requires internet access while running locally.
 
+## Troubleshooting
+
+MongoDB connection refused:
+
+```bash
+brew services start mongodb-community
+brew services list | grep mongodb
+```
+
+Redis connection refused:
+
+Redis is optional in development because the app falls back to memory cache. To remove the warning:
+
+```bash
+brew services start redis
+```
+
+Map does not load:
+
+- Check internet connection.
+- Leaflet and OpenStreetMap tiles are loaded from public CDNs.
+
+Current location does not work:
+
+- Allow location permission in the browser.
+- Use `http://localhost:3000`; browser geolocation usually works on localhost.
+- Manual longitude/latitude entry remains available as fallback.
+
+Admin cannot see tickets:
+
+- Confirm the admin region and slot match the ticket.
+- Use the Account page to update region/slot for demo testing.
+- Morning demo data is easiest to test because the seeded admin uses `region1` and `morning`.
+
+Password rejected during signup:
+
+Use at least 12 characters with uppercase, lowercase, number, and special character. Example:
+
+```text
+StrongPass123!
+```
+
 ## Useful Commands
 
 ```bash
 npm start
 npm run seed
 npm run seed:demo
+npm run demo:reset
 npm run check
 ```
+
+## Review Checklist
+
+- `npm run check` passes
+- `npm audit --omit=dev` has no known vulnerabilities
+- Customer can create and view requests
+- Admin can review and close requests
+- Map picker, current location, and manual coordinates work
+- Light/dark theme toggle persists after refresh
+- README setup and demo instructions are current
 
 ## Suggested Future Improvements
 

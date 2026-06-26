@@ -3,6 +3,7 @@ const state = {
     view: 'tickets',
     filter: 'active',
     tickets: [],
+    health: null,
     selectedTicket: null,
     regions: null,
     selectedLocation: null,
@@ -185,6 +186,10 @@ const loadTickets = async () => {
     state.shortestPath = data.shortestPath || null;
 };
 
+const loadHealth = async () => {
+    state.health = await api('/api/v1/health').catch(() => null);
+};
+
 const ticketTitle = (ticket) => {
     const coords = ticket.location?.coordinates || [];
     return `${titleCase(ticket.slot || 'slot')} pickup`;
@@ -215,6 +220,7 @@ const renderTickets = async () => {
     $('#content').innerHTML = '<div class="panel">Loading tickets...</div>';
     try {
         await loadTickets();
+        await loadHealth();
         const active = state.tickets.filter(ticket => ticket.status !== 'closed').length;
         const closed = state.tickets.filter(ticket => ticket.status === 'closed').length;
         $('#content').innerHTML = `
@@ -236,6 +242,13 @@ const renderTickets = async () => {
                 <div class="metric"><span>Visible</span><strong>${state.tickets.length}</strong></div>
                 <div class="metric"><span>Active</span><strong>${active}</strong></div>
                 <div class="metric"><span>Closed</span><strong>${closed}</strong></div>
+            </div>
+            <div class="status-strip">
+                <div>
+                    <span class="status-dot ${state.health ? 'online' : 'offline'}"></span>
+                    <strong>${state.health ? 'API Online' : 'API Unavailable'}</strong>
+                </div>
+                <span>${state.health ? `Runtime ${state.health.environment} · uptime ${Math.floor(state.health.uptime / 60)}m ${state.health.uptime % 60}s` : 'Refresh after the backend starts'}</span>
             </div>
             ${state.shortestPath ? `
                 <div class="route-summary">

@@ -3,6 +3,7 @@
     "start": "node server/app.js",
     "seed": "node server/scripts/seed.js",
     "seed:demo": "node server/scripts/seedDemo.js",
+    "demo:reset": "node server/scripts/seedDemo.js",
     "check": "node --check server/app.js && node --check server/routes/auth.js && node --check server/routes/customer.js && node --check server/routes/admin.js"
   },
   "dependencies": {

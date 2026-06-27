@@ -4,7 +4,7 @@
     "seed": "node server/scripts/seed.js",
     "seed:demo": "node server/scripts/seedDemo.js",
     "demo:reset": "node server/scripts/seedDemo.js",
-    "check": "node --check server/app.js && node --check server/routes/auth.js && node --check server/routes/customer.js && node --check server/routes/admin.js"
+    "check": "node --check server/app.js && node --check server/routes/auth.js && node --check server/routes/customer.js && node --check server/routes/admin.js && node --check server/routes/worker.js"
   },
   "dependencies": {
     "axios": "^1.9.0",

@@ -2,7 +2,7 @@ const forRole = (role) => {
 
     let result = '_id username email phone role';
 
-    if (role == 'admin') {
+    if (role == 'admin' || role == 'worker') {
         result += ' region slot';
     }
 

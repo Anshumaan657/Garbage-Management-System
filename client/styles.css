@@ -474,6 +474,18 @@ main {
     background: var(--note-bg);
 }
 
+.assignment-panel {
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--soft);
+}
+
+.assignment-panel h3,
+.assignment-panel p {
+    margin: 0;
+}
+
 .muted {
     color: var(--muted);
 }

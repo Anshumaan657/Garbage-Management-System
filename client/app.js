@@ -1,9 +1,10 @@
 const state = {
     user: null,
     view: 'tickets',
-    filter: 'active',
+    filter: 'all',
     tickets: [],
     health: null,
+    workers: [],
     selectedTicket: null,
     regions: null,
     selectedLocation: null,
@@ -55,6 +56,8 @@ const toast = (message, isError = false) => {
 const formData = (form) => Object.fromEntries(new FormData(form).entries());
 
 const titleCase = (value = '') => value.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+
+const defaultFilterForRole = (role) => role === 'admin' ? 'pending' : role === 'worker' ? 'assigned' : 'all';
 
 const toLatLng = ([lng, lat]) => [lat, lng];
 
@@ -156,7 +159,9 @@ const showAuth = () => {
 const renderNav = () => {
     const items = state.user.role === 'admin'
         ? [['tickets', 'Dispatch Queue'], ['profile', 'Account']]
-        : [['tickets', 'Requests'], ['new', 'New Request'], ['profile', 'Account']];
+        : state.user.role === 'worker'
+            ? [['tickets', 'Assigned Work'], ['profile', 'Account']]
+            : [['tickets', 'Requests'], ['new', 'New Request'], ['profile', 'Account']];
 
     $('#nav').innerHTML = items.map(([id, label]) =>
         `<button type="button" class="${state.view === id ? 'active' : ''}" data-view="${id}">${label}</button>`
@@ -173,17 +178,29 @@ const renderNav = () => {
 };
 
 const loadProfile = async () => {
-    const path = state.user.role === 'admin' ? '/api/v1/admin' : '/api/v1/customer';
+    const path = state.user.role === 'admin'
+        ? '/api/v1/admin'
+        : state.user.role === 'worker'
+            ? '/api/v1/worker'
+            : '/api/v1/customer';
     return api(path);
 };
 
 const loadTickets = async () => {
     const path = state.user.role === 'admin'
         ? `/api/v1/admin/ticket?status=${state.filter}`
-        : `/api/v1/customer/ticket${state.filter === 'all' ? '' : `?status=${state.filter}`}`;
+        : state.user.role === 'worker'
+            ? `/api/v1/worker/ticket${state.filter === 'all' ? '' : `?status=${state.filter}`}`
+            : `/api/v1/customer/ticket${state.filter === 'all' ? '' : `?status=${state.filter}`}`;
     const data = await api(path);
     state.tickets = Array.isArray(data) ? data : data.tickets || [];
     state.shortestPath = data.shortestPath || null;
+};
+
+const loadWorkers = async () => {
+    if (state.user.role !== 'admin') return [];
+    state.workers = await api('/api/v1/admin/worker').catch(() => []);
+    return state.workers;
 };
 
 const loadHealth = async () => {
@@ -205,12 +222,12 @@ const ticketList = () => {
             <div>
                 <h3>${ticketTitle(ticket)}</h3>
                 <p>${ticket.dateOfCreation || 'Pending date'} ${ticket.timeOfCreation || ''} · ${ticket.location?.coordinates?.join(', ') || 'No coordinates'}</p>
-                <p><span class="badge ${ticket.status === 'closed' ? 'closed' : ''}">${titleCase(ticket.status || 'active')}</span></p>
+                <p><span class="badge ${ticket.status === 'closed' ? 'closed' : ''}">${titleCase(ticket.status || 'pending')}</span></p>
             </div>
             <div class="actions">
                 <button type="button" class="secondary" data-ticket="${ticket._id}">Details</button>
                 ${state.user.role === 'customer' ? `<button type="button" class="danger" data-delete="${ticket._id}">Delete</button>` : ''}
-                ${state.user.role === 'admin' && ticket.status !== 'closed' ? `<button type="button" data-close="${ticket._id}">Close</button>` : ''}
+                ${state.user.role === 'admin' && ticket.status === 'collected' ? `<button type="button" data-close="${ticket._id}">Close</button>` : ''}
             </div>
         </article>
     `).join('')}</div>`;
@@ -226,13 +243,16 @@ const renderTickets = async () => {
         $('#content').innerHTML = `
             <div class="section-head">
                 <div>
-                    <h2>${state.user.role === 'admin' ? 'Dispatch Queue' : 'Service Requests'}</h2>
-                    <p>${state.user.role === 'admin' ? 'Region-scoped requests for the active operating slot.' : 'Your pickup requests and their latest status.'}</p>
+                    <h2>${state.user.role === 'admin' ? 'Dispatch Queue' : state.user.role === 'worker' ? 'Assigned Work' : 'Service Requests'}</h2>
+                    <p>${state.user.role === 'admin' ? 'Region-scoped requests ready for worker assignment and closure.' : state.user.role === 'worker' ? 'Pickups assigned to your collection route.' : 'Your pickup requests and their latest status.'}</p>
                 </div>
                 <div class="toolbar">
                     <select id="statusFilter" aria-label="Status filter">
-                        ${state.user.role === 'customer' ? '<option value="all">All</option>' : ''}
-                        <option value="active">Active</option>
+                        ${state.user.role !== 'admin' ? '<option value="all">All</option>' : ''}
+                        ${state.user.role !== 'worker' ? '<option value="pending">Pending</option>' : ''}
+                        <option value="assigned">Assigned</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="collected">Collected</option>
                         <option value="closed">Closed</option>
                     </select>
                     <button type="button" id="refreshBtn" class="ghost">Refresh</button>
@@ -240,7 +260,7 @@ const renderTickets = async () => {
             </div>
             <div class="metrics">
                 <div class="metric"><span>Visible</span><strong>${state.tickets.length}</strong></div>
-                <div class="metric"><span>Active</span><strong>${active}</strong></div>
+                <div class="metric"><span>Open</span><strong>${active}</strong></div>
                 <div class="metric"><span>Closed</span><strong>${closed}</strong></div>
             </div>
             <div class="status-strip">
@@ -284,7 +304,9 @@ const bindTicketActions = () => {
 
 const ticketPath = (id) => state.user.role === 'admin'
     ? `/api/v1/admin/ticket/${id}`
-    : `/api/v1/customer/ticket/${id}`;
+    : state.user.role === 'worker'
+        ? `/api/v1/worker/ticket/${id}`
+        : `/api/v1/customer/ticket/${id}`;
 
 const openTicket = async (id) => {
     try {
@@ -322,30 +344,106 @@ const renderTicketDetail = () => {
                     `).join('') : '<p class="muted">No activity notes yet.</p>'}
                 </div>
             </div>
-            <form id="noteForm" class="stack">
-                <textarea name="note" placeholder="Add an internal note" aria-label="Add note" required></textarea>
-                <button type="submit">Save Note</button>
-            </form>
+            ${state.user.role !== 'worker' ? `
+                <form id="noteForm" class="stack">
+                    <textarea name="note" placeholder="Add an internal note" aria-label="Add note" required></textarea>
+                    <button type="submit">Save Note</button>
+                </form>
+            ` : ''}
+            ${state.user.role === 'admin' && ticket.status !== 'closed' ? renderAssignWorkerForm() : ''}
+            ${state.user.role === 'worker' ? renderWorkerStatusActions(ticket) : ''}
         </div>
     `;
     $('#backBtn').addEventListener('click', renderTickets);
     initDetailMap(coords);
-    $('#noteForm').addEventListener('submit', async (event) => {
+    if (state.user.role === 'admin' && ticket.status !== 'closed') bindAssignWorkerForm(ticket._id);
+    if (state.user.role === 'worker') bindWorkerStatusActions(ticket._id);
+    if (state.user.role !== 'worker') {
+        $('#noteForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            setBusy(form, true);
+            try {
+                state.selectedTicket = await api(ticketPath(ticket._id), {
+                    method: 'PATCH',
+                    body: JSON.stringify(formData(form))
+                });
+                toast('Note added');
+                renderTicketDetail();
+            } catch (error) {
+                toast(error.message, true);
+            } finally {
+                setBusy(form, false);
+            }
+        });
+    }
+};
+
+const renderAssignWorkerForm = () => `
+    <form id="assignWorkerForm" class="stack assignment-panel">
+        <div>
+            <h3>Worker Assignment</h3>
+            <p class="muted">Assign this request to a collection worker.</p>
+        </div>
+        <div class="two-col">
+            <select name="workerId" aria-label="Worker" required>
+                <option value="">Select worker</option>
+                ${state.workers.map(worker => `<option value="${worker._id}">${worker.username} · ${titleCase(worker.slot || 'slot')}</option>`).join('')}
+            </select>
+            <button type="submit">Assign Worker</button>
+        </div>
+    </form>
+`;
+
+const renderWorkerStatusActions = (ticket) => {
+    if (ticket.status === 'assigned') {
+        return '<div class="actions"><button type="button" data-worker-status="in_progress">Start Pickup</button></div>';
+    }
+    if (ticket.status === 'in_progress') {
+        return '<div class="actions"><button type="button" data-worker-status="collected">Mark Collected</button></div>';
+    }
+    return '<p class="muted">No worker action available for this status.</p>';
+};
+
+const bindAssignWorkerForm = async (ticketId) => {
+    await loadWorkers();
+    const form = $('#assignWorkerForm');
+    if (!form) return;
+    form.outerHTML = renderAssignWorkerForm();
+    $('#assignWorkerForm').addEventListener('submit', async (event) => {
         event.preventDefault();
         const form = event.currentTarget;
+        const data = formData(form);
         setBusy(form, true);
         try {
-            state.selectedTicket = await api(ticketPath(ticket._id), {
+            state.selectedTicket = await api(`/api/v1/admin/ticket/${ticketId}/assign`, {
                 method: 'PATCH',
-                body: JSON.stringify(formData(form))
+                body: JSON.stringify({ workerId: data.workerId })
             });
-            toast('Note added');
+            toast('Worker assigned');
             renderTicketDetail();
         } catch (error) {
             toast(error.message, true);
         } finally {
             setBusy(form, false);
         }
+    });
+};
+
+const bindWorkerStatusActions = (ticketId) => {
+    document.querySelectorAll('[data-worker-status]').forEach(button => {
+        button.addEventListener('click', async () => {
+            try {
+                state.selectedTicket = await api(`/api/v1/worker/ticket/${ticketId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ status: button.dataset.workerStatus })
+                });
+                toast('Ticket status updated');
+                renderTicketDetail();
+            } catch (error) {
+                toast(error.message, true);
+            }
+        });
     });
 };
 
@@ -438,6 +536,7 @@ const renderNewTicket = async () => {
         $('#currentLocationBtn').disabled = true;
         navigator.geolocation.getCurrentPosition((position) => {
             setSelectedLocation(position.coords.longitude, position.coords.latitude, 'Current location');
+            if (state.requestMap) state.requestMap.setView([position.coords.latitude, position.coords.longitude], 16);
             $('#currentLocationBtn').disabled = false;
         }, () => {
             toast('Could not access current location. Check browser location permission.', true);
@@ -533,11 +632,11 @@ const renderProfile = async () => {
                     ${profile.slot ? `<div><span>Slot</span><strong>${titleCase(profile.slot)}</strong></div>` : ''}
                 </div>
             </div>
-            ${profile.role === 'admin' ? `
+            ${['admin', 'worker'].includes(profile.role) ? `
                 <div class="panel stack">
                     <div>
-                        <h3>Dispatch Scope</h3>
-                        <p class="muted">Update the region and operating slot for this admin account.</p>
+                        <h3>${profile.role === 'admin' ? 'Dispatch Scope' : 'Worker Scope'}</h3>
+                        <p class="muted">Update the region and operating slot for this account.</p>
                     </div>
                     <form id="adminScopeForm" class="stack">
                         <div class="two-col">
@@ -558,20 +657,20 @@ const renderProfile = async () => {
                 </div>
             ` : ''}
         `;
-        if (profile.role === 'admin') bindAdminScopeForm();
+        if (['admin', 'worker'].includes(profile.role)) bindScopeForm(profile.role);
     } catch (error) {
         $('#content').innerHTML = `<div class="panel"><p>${error.message}</p></div>`;
     }
 };
 
-const bindAdminScopeForm = () => {
+const bindScopeForm = (role) => {
     $('#adminScopeForm').addEventListener('submit', async (event) => {
         event.preventDefault();
         const form = event.currentTarget;
         const data = formData(form);
         setBusy(form, true);
         try {
-            await api('/api/v1/admin', {
+            await api(role === 'admin' ? '/api/v1/admin' : '/api/v1/worker', {
                 method: 'PATCH',
                 body: JSON.stringify({
                     updates: {
@@ -580,7 +679,7 @@ const bindAdminScopeForm = () => {
                     }
                 })
             });
-            toast('Dispatch scope updated');
+            toast('Scope updated');
             renderProfile();
         } catch (error) {
             toast(error.message, true);
@@ -611,7 +710,7 @@ $('#signupTab').addEventListener('click', () => {
 });
 
 $('#roleSelect').addEventListener('change', (event) => {
-    $('#adminFields').classList.toggle('hidden', event.target.value !== 'admin');
+    $('#adminFields').classList.toggle('hidden', !['admin', 'worker'].includes(event.target.value));
 });
 
 $('#themeToggle').addEventListener('click', () => {
@@ -630,7 +729,7 @@ $('#loginForm').addEventListener('submit', async (event) => {
         });
         state.user = data.user;
         state.view = 'tickets';
-        state.filter = 'active';
+        state.filter = defaultFilterForRole(data.user.role);
         showApp();
         toast('Logged in');
     } catch (error) {
@@ -651,7 +750,7 @@ $('#signupForm').addEventListener('submit', async (event) => {
         password: data.password,
         role: data.role
     };
-    if (data.role === 'admin') {
+    if (['admin', 'worker'].includes(data.role)) {
         body.region = data.region;
         body.slot = data.slot;
     }
@@ -663,7 +762,7 @@ $('#signupForm').addEventListener('submit', async (event) => {
         });
         state.user = result.user;
         state.view = 'tickets';
-        state.filter = 'active';
+        state.filter = defaultFilterForRole(result.user.role);
         showApp();
         toast('Account created');
     } catch (error) {
@@ -682,6 +781,7 @@ $('#logoutBtn').addEventListener('click', async () => {
     try {
         const data = await api('/api/v1/auth/me');
         state.user = data.user;
+        state.filter = defaultFilterForRole(data.user.role);
         showApp();
     } catch (_) {
         showAuth();

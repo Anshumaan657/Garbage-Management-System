@@ -22,28 +22,36 @@ const users = [
         role: 'admin',
         region: 'region1',
         slot: 'morning'
+    },
+    {
+        username: 'demo_worker',
+        email: 'worker.demo@example.com',
+        phone: '9876543212',
+        role: 'worker',
+        region: 'region1',
+        slot: 'morning'
     }
 ];
 
 const tickets = [
     {
         slot: 'morning',
-        status: 'active',
+        status: 'pending',
         location: { type: 'Point', coordinates: [75.77781182767711, 26.956567333262228] },
         note: [{ author: 'demo_customer', message: 'Pickup requested near the main gate.' }]
     },
     {
         slot: 'morning',
-        status: 'closed',
+        status: 'assigned',
         location: { type: 'Point', coordinates: [75.772390399052, 26.967175774333015] },
         note: [
             { author: 'demo_customer', message: 'Bins are full after the weekend.' },
-            { author: 'demo_admin', message: 'Collected and closed during morning route.' }
+            { author: 'demo_admin', message: 'Assigned to demo_worker' }
         ]
     },
     {
         slot: 'afternoon',
-        status: 'active',
+        status: 'pending',
         location: { type: 'Point', coordinates: [75.78543883994007, 26.967577088741734] },
         note: [{ author: 'demo_customer', message: 'Second pickup point for afternoon demo.' }]
     }
@@ -71,8 +79,13 @@ const upsertUsers = async () => {
 }
 
 const seedTickets = async (customer) => {
+    const worker = await User.findOne({ username: 'demo_worker' });
     await Ticket.deleteMany({ ownerId: customer._id });
-    await Ticket.insertMany(tickets.map(ticket => ({ ...ticket, ownerId: customer._id })));
+    await Ticket.insertMany(tickets.map((ticket, index) => ({
+        ...ticket,
+        ownerId: customer._id,
+        assignedTo: index === 1 ? worker._id : null
+    })));
 }
 
 const seed = async () => {
@@ -87,6 +100,7 @@ const seed = async () => {
     console.log('Demo data seeded.');
     console.log(`Customer: demo_customer / ${PASSWORD}`);
     console.log(`Admin: demo_admin / ${PASSWORD}`);
+    console.log(`Worker: demo_worker / ${PASSWORD}`);
     await mongoose.disconnect();
 }
 

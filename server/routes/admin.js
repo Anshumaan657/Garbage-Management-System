@@ -10,8 +10,12 @@ const { DEFAULT_EXPIRATION } = require('../constants').redis;
 const SLOT = require('../constants').slot;
 
 const ticketListSchema = joi.Joi.object({
-    status: joi.Joi.string().valid('active', 'closed').default('active'),
+    status: joi.Joi.string().valid('pending', 'assigned', 'in_progress', 'collected', 'closed').default('pending'),
     slot: joi.Joi.string().valid('morning', 'afternoon', 'evening')
+});
+
+const assignTicketSchema = joi.Joi.object({
+    workerId: joi.Joi.string().required()
 });
 
 const serializeTicket = (ticket) => {
@@ -169,6 +173,16 @@ router.route("/ticket")
 
     })
 
+router.route("/worker")
+    .get(async (req, res, next) => {
+        try {
+            const workers = await User.find({ role: 'worker' }).select('_id username email phone region slot').sort({ username: 1 }).lean();
+            return res.status(200).send(workers);
+        } catch (error) {
+            return next(error instanceof ExpressError ? error : new ExpressError(500, `${error}`));
+        }
+    })
+
 router.route("/ticket/:id")
     .get(async (req, res, next) => {
 
@@ -193,6 +207,34 @@ router.route("/ticket/:id")
 
         }
 
+    })
+
+router.route("/ticket/:id/assign")
+    .patch(async (req, res, next) => {
+        try {
+            const { error, value } = assignTicketSchema.validate(req.body);
+            if (error) throw new ExpressError(400, 'Invalid assignment body');
+
+            const ticket = await getAdminTicket(req.params.id, req.user);
+            if (ticket.status === 'closed') throw new ExpressError(400, 'Closed tickets cannot be assigned');
+
+            const worker = await User.findOne({ _id: value.workerId, role: 'worker' }).lean();
+            if (!worker) throw new ExpressError(404, 'Worker not found');
+
+            ticket.assignedTo = worker._id;
+            ticket.status = 'assigned';
+            ticket.note ??= [];
+            ticket.note.push({
+                author: req.user.username,
+                message: `Assigned to ${worker.username}`
+            });
+            await ticket.save();
+            await redis.setCache(`ticket:${ticket._id}`, serializeTicket(ticket), DEFAULT_EXPIRATION);
+
+            return res.status(200).send(serializeTicket(ticket));
+        } catch (error) {
+            return next(error instanceof ExpressError ? error : new ExpressError(500, `${error}`));
+        }
     })
     .patch(async (req, res, next) => {
 
@@ -239,13 +281,18 @@ router.route("/ticket/:id")
             const user = req.user;
             let ticketId = req.params.id;
 
-            const updates = {
-                status: 'closed'
+            const ticket = await getAdminTicket(ticketId, user);
+            if (ticket.status !== 'collected') {
+                throw new ExpressError(400, 'Only collected tickets can be closed');
             }
 
-            const ticket = await getAdminTicket(ticketId, user);
-
-            await Ticket.findByIdAndUpdate(ticket._id, updates);
+            ticket.status = 'closed';
+            ticket.note ??= [];
+            ticket.note.push({
+                author: user.username,
+                message: 'Ticket closed after collection confirmation'
+            });
+            await ticket.save();
             await redis.deleteCache(`ticket:${ticketId}`);
             const region = await getAdminRegion(user);
             await redis.deleteCache(`ticket:${user.slot}:${region.name}`);

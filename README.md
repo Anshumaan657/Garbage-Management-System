@@ -1,30 +1,44 @@
 # Garbage Management System
 
-A full-stack garbage pickup management project with a Node.js/Express backend, MongoDB storage, Redis-compatible caching, JWT cookie authentication, and a browser frontend served by the backend.
+A local-first full-stack garbage pickup management system with role-based workflows for customers, admins, and workers. The project includes a Node.js/Express API, MongoDB persistence, Redis-compatible caching, secure cookie authentication, map-based pickup requests, and a responsive browser dashboard served by the backend.
 
 ## Project Highlights
 
-- Role-based workflows for customers and admins
+- Role-based workflows for customers, admins, and workers
 - Secure cookie-based authentication with refresh-token support
 - Map-based pickup request creation using Leaflet and OpenStreetMap
-- Region-aware admin ticket visibility and ticket closure flow
+- Region-aware dispatch queue, worker assignment, and ticket closure flow
+- Worker dashboard for assigned pickups and collection status updates
 - Demo seeding for quick local review
 - Local-first setup with MongoDB, optional Redis fallback, and clear environment configuration
 - Responsive UI with persistent light/dark theme support
 
 ## Features
 
-- Customer and admin signup/login
+- Customer, admin, and worker signup/login
 - Secure httpOnly cookie-based sessions
 - Customer ticket creation with an interactive map picker, current-location capture, manual coordinate fallback, slot, and notes
 - Customer ticket listing, detail view, note updates, and deletion
 - Service boundary and regional polygons displayed on the map
 - Persistent light/dark theme toggle
-- Admin region/slot-based ticket listing
-- Admin ticket note updates and ticket closure
+- Admin region/slot-based ticket listing and worker assignment
+- Worker ticket dashboard with `assigned -> in_progress -> collected` status progression
+- Admin ticket note updates and collected-ticket closure
 - Region seeding for the configured service area
 - Same-origin frontend, so the UI and API run from one server
 - Redis support with in-memory fallback for local development
+
+## Workflow
+
+```text
+Customer creates pickup request
+Admin reviews region/slot queue
+Admin assigns request to worker
+Worker starts pickup
+Worker marks request collected
+Admin closes collected request
+Customer can track status throughout
+```
 
 ## Tech Stack
 
@@ -124,6 +138,7 @@ Demo credentials:
 ```text
 Customer: demo_customer / StrongPass123!
 Admin: demo_admin / StrongPass123!
+Worker: demo_worker / StrongPass123!
 ```
 
 ## Start The App
@@ -149,9 +164,11 @@ Use this sequence to review the project locally:
 5. Create a pickup request from `New Request` using the map or current location.
 6. Open the created request and add a note.
 7. Logout and login as `demo_admin`.
-8. Review active tickets in the dispatch queue.
-9. Change admin region/slot from the Account page if needed.
-10. Open a ticket, add an operational note, and close it.
+8. Review pending tickets in the dispatch queue.
+9. Assign a ticket to `demo_worker`.
+10. Logout and login as `demo_worker`.
+11. Start the pickup, then mark it collected.
+12. Login as `demo_admin` again and close the collected ticket.
 
 ## Location Workflow
 
@@ -172,6 +189,12 @@ Create accounts from the signup screen.
 For admin accounts, choose:
 
 - Role: `admin`
+- Region: `region1`, `region2`, `region3`, or `region4`
+- Slot: `morning`, `afternoon`, or `evening`
+
+For worker accounts, choose:
+
+- Role: `worker`
 - Region: `region1`, `region2`, `region3`, or `region4`
 - Slot: `morning`, `afternoon`, or `evening`
 
@@ -224,7 +247,7 @@ Customer:
 ```http
 GET    /api/v1/customer
 PATCH  /api/v1/customer
-GET    /api/v1/customer/ticket?status=active&slot=morning
+GET    /api/v1/customer/ticket?status=pending&slot=morning
 POST   /api/v1/customer/ticket
 GET    /api/v1/customer/ticket/:id
 PATCH  /api/v1/customer/ticket/:id
@@ -236,10 +259,22 @@ Admin:
 ```http
 GET   /api/v1/admin
 PATCH /api/v1/admin
-GET   /api/v1/admin/ticket?status=active
+GET   /api/v1/admin/worker
+GET   /api/v1/admin/ticket?status=pending
 GET   /api/v1/admin/ticket/:id
 PATCH /api/v1/admin/ticket/:id
+PATCH /api/v1/admin/ticket/:id/assign
 PUT   /api/v1/admin/ticket/:id
+```
+
+Worker:
+
+```http
+GET   /api/v1/worker
+PATCH /api/v1/worker
+GET   /api/v1/worker/ticket?status=assigned
+GET   /api/v1/worker/ticket/:id
+PATCH /api/v1/worker/ticket/:id
 ```
 
 ## Important Notes
@@ -247,6 +282,8 @@ PUT   /api/v1/admin/ticket/:id
 - Customer ticket actions are restricted to the ticket owner.
 - Admin ticket actions are restricted to the admin's assigned region.
 - Admin ticket list is also restricted by the admin's slot.
+- Workers can only see and update tickets assigned to them.
+- Admins can close tickets only after a worker marks them as `collected`.
 - In development, Redis is optional because the app falls back to memory cache.
 - In production, use Redis and set `NODE_ENV=production` so cookies use stricter settings.
 - The admin route summary uses the public OSRM route service. If that service fails, tickets still load.
@@ -285,6 +322,12 @@ Admin cannot see tickets:
 - Confirm the admin region and slot match the ticket.
 - Use the Account page to update region/slot for demo testing.
 - Morning demo data is easiest to test because the seeded admin uses `region1` and `morning`.
+
+Worker cannot see tickets:
+
+- Confirm the ticket has been assigned by an admin.
+- Login as `demo_worker` after running `npm run seed:demo`.
+- Use the `Assigned` filter in the worker dashboard.
 
 Password rejected during signup:
 

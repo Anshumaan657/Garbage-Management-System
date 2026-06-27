@@ -3,7 +3,12 @@ const mongoose = require("mongoose");
 const ticketSchema = new mongoose.Schema({
     ownerId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "customers",
+        ref: "user",
+    },
+    assignedTo: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "user",
+        default: null,
     },
     location: {
         type: {
@@ -29,12 +34,13 @@ const ticketSchema = new mongoose.Schema({
     ],
     status: {
         type: String,
-        enum: { values: ['active', 'closed'], message: "{VALUE} is not supported. Supported: ['active', 'closed']" },
-        default: 'active',
+        enum: { values: ['pending', 'assigned', 'in_progress', 'collected', 'closed'], message: "{VALUE} is not supported" },
+        default: 'pending',
     }
 
 }, { timestamps: true }); // use doc.createdAt on the service layer
 
 ticketSchema.index({ location: '2dsphere' });
+ticketSchema.index({ assignedTo: 1, status: 1 });
 
 module.exports = mongoose.model("ticket", ticketSchema);

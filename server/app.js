@@ -43,6 +43,7 @@ app.use('/api/v1/auth', router.auth);
 app.use('/api/v1/regions', router.region);
 app.use('/api/v1/admin', verifyUser, verifyRole('admin'), router.admin);
 app.use('/api/v1/customer', verifyUser, verifyRole('customer'), router.customer);
+app.use('/api/v1/worker', verifyUser, verifyRole('worker'), router.worker);
 
 app.use((req, res, next) => {
     if (req.path.startsWith('/api/')) {

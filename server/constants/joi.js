@@ -1,7 +1,8 @@
 const VALID = {
     regions: ['region1', 'region2', 'region3', 'region4'],
-    roles: ['admin', 'customer'],
+    roles: ['admin', 'customer', 'worker'],
     slots: ['morning', 'afternoon', 'evening'],
+    statuses: ['pending', 'assigned', 'in_progress', 'collected', 'closed'],
     updateKey: ['username', 'email', 'phone', 'region', 'slot'],
 }
 

@@ -11,7 +11,7 @@ const { PARENT_REGION } = constants.region;
 const { isPointInPolygon } = require('../utils/miscellaneous.js');
 
 const ticketListSchema = joi.Joi.object({
-    status: joi.Joi.string().valid('active', 'closed'),
+    status: joi.Joi.string().valid('pending', 'assigned', 'in_progress', 'collected', 'closed'),
     slot: joi.Joi.string().valid('morning', 'afternoon', 'evening')
 });
 
@@ -132,7 +132,7 @@ router.route("/ticket")
                     return coords[0] === req.body.location.coordinates[0] && coords[1] === req.body.location.coordinates[1] && ticket.status !== 'closed';
                 });
             } else {
-                let tickets = await Ticket.find({ ownerId: user._id, status: 'active' }).select('location status');
+                let tickets = await Ticket.find({ ownerId: user._id, status: { $ne: 'closed' } }).select('location status');
                 if(tickets){
                     tickets.forEach((ticket)=>{
                         if((ticket.location.coordinates[0] == req.body.location.coordinates[0])){
@@ -152,7 +152,7 @@ router.route("/ticket")
                 req.body.note = [{ author: `${user.username}`, message }]
             }
 
-            let ticket = new Ticket({ ...req.body, ownerId: user._id, status: 'active' });
+            let ticket = new Ticket({ ...req.body, ownerId: user._id, status: 'pending' });
             await ticket.save();
             const response = serializeTicket(ticket);
             await redis.setCache(`ticket:${ticket._id}`, response, DEFAULT_EXPIRATION);
